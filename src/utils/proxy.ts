@@ -57,6 +57,16 @@ export async function specificProxyRequest(
 
   const method = opts.fetchOptions?.method || event.method;
   const oldHeaders = getProxyRequestHeaders(event);
+
+  // netlify seems to be changing the content-encoding header to gzip when the reponse is encoded in zstd
+  // so as temp fix just not sending zstd in accept encoding
+  if (oldHeaders['accept-encoding']?.includes('zstd'))
+    oldHeaders['accept-encoding'] = oldHeaders['accept-encoding']
+      .split(',')
+      .map((x: string) => x.trim())
+      .filter((x: string) => x !== 'zstd')
+      .join(', ');
+
   opts.blacklistedHeaders?.forEach((header) => {
     const keys = Object.keys(oldHeaders).filter(
       (v) => v.toLowerCase() === header.toLowerCase(),
