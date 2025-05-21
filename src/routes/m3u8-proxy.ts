@@ -33,10 +33,64 @@ function parseURL(req_url: string, baseUrl?: string) {
   }
 }
 
-const segmentCache: Map<string, { data: Uint8Array, headers: Record<string, string> }> = new Map();
+interface CacheEntry {
+  data: Uint8Array;
+  headers: Record<string, string>;
+  timestamp: number;
+}
+
+const CACHE_MAX_SIZE = 2000;
+const CACHE_EXPIRY_MS = 2 * 60 * 60 * 1000;
+const segmentCache: Map<string, CacheEntry> = new Map();
+
+function cleanupCache() {
+  const now = Date.now();
+  let expiredCount = 0;
+  
+  for (const [url, entry] of segmentCache.entries()) {
+    if (now - entry.timestamp > CACHE_EXPIRY_MS) {
+      segmentCache.delete(url);
+      expiredCount++;
+    }
+  }
+  
+  if (segmentCache.size > CACHE_MAX_SIZE) {
+    const entries = Array.from(segmentCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const toRemove = entries.slice(0, segmentCache.size - CACHE_MAX_SIZE);
+    for (const [url] of toRemove) {
+      segmentCache.delete(url);
+    }
+    
+    console.log(`Cache size limit reached. Removed ${toRemove.length} oldest entries. Current size: ${segmentCache.size}`);
+  }
+  
+  if (expiredCount > 0) {
+    console.log(`Cleaned up ${expiredCount} expired cache entries. Current size: ${segmentCache.size}`);
+  }
+  
+  return segmentCache.size;
+}
+
+let cleanupInterval: any = null;
+function startCacheCleanupInterval() {
+  if (!cleanupInterval) {
+    cleanupInterval = setInterval(cleanupCache, 30 * 60 * 1000);
+    console.log('Started periodic cache cleanup interval');
+  }
+}
+
+startCacheCleanupInterval();
 
 async function prefetchSegment(url: string, headers: HeadersInit) {
-  if (segmentCache.has(url)) {
+  if (segmentCache.size >= CACHE_MAX_SIZE) {
+    cleanupCache();
+  }
+  
+  const existing = segmentCache.get(url);
+  const now = Date.now();
+  if (existing && (now - existing.timestamp <= CACHE_EXPIRY_MS)) {
     return;
   }
   
@@ -63,7 +117,8 @@ async function prefetchSegment(url: string, headers: HeadersInit) {
     
     segmentCache.set(url, { 
       data, 
-      headers: responseHeaders 
+      headers: responseHeaders,
+      timestamp: Date.now()
     });
     
     console.log(`Prefetched and cached segment: ${url}`);
@@ -73,7 +128,31 @@ async function prefetchSegment(url: string, headers: HeadersInit) {
 }
 
 export function getCachedSegment(url: string) {
-  return segmentCache.get(url);
+  const entry = segmentCache.get(url);
+  if (entry) {
+    if (Date.now() - entry.timestamp > CACHE_EXPIRY_MS) {
+      segmentCache.delete(url);
+      return undefined;
+    }
+    return entry;
+  }
+  return undefined;
+}
+
+export function getCacheStats() {
+  const sizes = Array.from(segmentCache.values())
+    .map(entry => entry.data.byteLength);
+  
+  const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
+  const avgBytes = sizes.length > 0 ? totalBytes / sizes.length : 0;
+  
+  return {
+    entries: segmentCache.size,
+    totalSizeMB: (totalBytes / (1024 * 1024)).toFixed(2),
+    avgEntrySizeKB: (avgBytes / 1024).toFixed(2),
+    maxSize: CACHE_MAX_SIZE,
+    expiryHours: CACHE_EXPIRY_MS / (60 * 60 * 1000)
+  };
 }
 
 async function proxyM3U8(event: any) {
@@ -202,6 +281,8 @@ async function proxyM3U8(event: any) {
       if (segmentUrls.length > 0) {
         console.log(`Starting to prefetch ${segmentUrls.length} segments for ${url}`);
         
+        cleanupCache();
+        
         Promise.all(segmentUrls.map(segmentUrl => 
           prefetchSegment(segmentUrl, headers as HeadersInit)
         )).catch(error => {
@@ -228,8 +309,21 @@ async function proxyM3U8(event: any) {
   }
 }
 
+export function handleCacheStats(event: any) {
+  cleanupCache();
+  setResponseHeaders(event, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate'
+  });
+  return getCacheStats();
+}
+
 export default defineEventHandler(async (event) => {
   if (isPreflightRequest(event)) return handleCors(event, {});
+  
+  if (event.path === '/cache-stats') {
+    return handleCacheStats(event);
+  }
   
   return await proxyM3U8(event);
 });
