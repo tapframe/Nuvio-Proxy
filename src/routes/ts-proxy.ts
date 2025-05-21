@@ -2,6 +2,7 @@ import { setResponseHeaders } from 'h3';
 import { getCachedSegment } from './m3u8-proxy';
 
 export default defineEventHandler(async (event) => {
+  // Handle CORS preflight requests
   if (isPreflightRequest(event)) return handleCors(event, {});
   
   const url = getQuery(event).url as string;
@@ -33,7 +34,7 @@ export default defineEventHandler(async (event) => {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': '*',
         'Access-Control-Allow-Methods': '*',
-        'Cache-Control': 'public, max-age=3600'
+        'Cache-Control': 'public, max-age=3600' // Allow caching of TS segments
       });
       
       return cachedSegment.data;
@@ -42,6 +43,7 @@ export default defineEventHandler(async (event) => {
     const response = await globalThis.fetch(url, {
       method: 'GET',
       headers: {
+        // Default User-Agent (from src/utils/headers.ts)
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:93.0) Gecko/20100101 Firefox/93.0',
         ...(headers as HeadersInit),
       }
@@ -56,9 +58,10 @@ export default defineEventHandler(async (event) => {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': '*',
       'Access-Control-Allow-Methods': '*',
-      'Cache-Control': 'public, max-age=3600'
+      'Cache-Control': 'public, max-age=3600' // Allow caching of TS segments
     });
     
+    // Return the binary data directly
     return new Uint8Array(await response.arrayBuffer());
   } catch (error: any) {
     console.error('Error proxying TS file:', error);
