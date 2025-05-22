@@ -185,13 +185,15 @@ async function proxyM3U8(event: any) {
   try {
     const response = await globalThis.fetch(url, {
       headers: {
-        // Default User-Agent (from src/utils/headers.ts)
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:93.0) Gecko/20100101 Firefox/93.0',
         ...(headers as HeadersInit),
       }
     });
     
     if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error(`Failed to fetch M3U8: ${response.status} ${response.statusText} for URL: ${url}`);
+      console.error(`Response body: ${errorText}`);
       throw new Error(`Failed to fetch M3U8: ${response.status} ${response.statusText}`);
     }
     
