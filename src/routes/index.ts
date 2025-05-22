@@ -11,12 +11,26 @@ import {
 } from '@/utils/turnstile';
 
 export default defineEventHandler(async (event) => {
-  // handle cors, if applicable
-  if (isPreflightRequest(event)) return handleCors(event, {});
+  // Handle preflight CORS requests
+  if (isPreflightRequest(event)) {
+    handleCors(event, {});
+    // Ensure the response ends here for preflight
+    event.node.res.statusCode = 204;
+    event.node.res.end();
+    return;
+  }
 
-  // parse destination URL
+  // Reject any other OPTIONS requests
+  if (event.node.req.method === 'OPTIONS') {
+    throw createError({
+      statusCode: 405,
+      statusMessage: 'Method Not Allowed',
+    });
+  }
+
+  // Parse destination URL
   const destination = getQuery<{ destination?: string }>(event).destination;
-  if (!destination)
+  if (!destination) {
     return await sendJson({
       event,
       status: 200,
@@ -26,8 +40,10 @@ export default defineEventHandler(async (event) => {
         })`,
       },
     });
+  }
 
-  if (!(await isAllowedToMakeRequest(event)))
+  // Check if allowed to make the request
+  if (!(await isAllowedToMakeRequest(event))) {
     return await sendJson({
       event,
       status: 401,
@@ -35,12 +51,13 @@ export default defineEventHandler(async (event) => {
         error: 'Invalid or missing token',
       },
     });
+  }
 
-  // read body
+  // Read body and create token if needed
   const body = await getBodyBuffer(event);
   const token = await createTokenIfNeeded(event);
 
-  // proxy
+  // Proxy the request
   try {
     await specificProxyRequest(event, destination, {
       blacklistedHeaders: getBlacklistedHeaders(),
