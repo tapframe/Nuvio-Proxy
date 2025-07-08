@@ -1,5 +1,8 @@
 import { setResponseHeaders } from 'h3';
 
+// Check if caching is disabled via environment variable
+const isCacheDisabled = () => process.env.DISABLE_CACHE === 'true';
+
 function parseURL(req_url: string, baseUrl?: string) {
   if (baseUrl) {
     return new URL(req_url, baseUrl).href;
@@ -87,6 +90,11 @@ function startCacheCleanupInterval() {
 startCacheCleanupInterval();
 
 async function prefetchSegment(url: string, headers: HeadersInit) {
+  // Skip prefetching if cache is disabled
+  if (isCacheDisabled()) {
+    return;
+  }
+  
   if (segmentCache.size >= CACHE_MAX_SIZE) {
     cleanupCache();
   }
@@ -131,6 +139,11 @@ async function prefetchSegment(url: string, headers: HeadersInit) {
 }
 
 export function getCachedSegment(url: string) {
+  // Return undefined immediately if cache is disabled
+  if (isCacheDisabled()) {
+    return undefined;
+  }
+  
   const entry = segmentCache.get(url);
   if (entry) {
     if (Date.now() - entry.timestamp > CACHE_EXPIRY_MS) {
@@ -275,7 +288,10 @@ async function proxyM3U8(event: any) {
               const proxyKeyUrl = `${baseProxyUrl}/ts-proxy?url=${encodeURIComponent(keyUrl)}&headers=${encodeURIComponent(JSON.stringify(headers))}`;
               newLines.push(line.replace(keyUrl, proxyKeyUrl));
               
-              prefetchSegment(keyUrl, headers as HeadersInit);
+              // Only prefetch if cache is enabled
+              if (!isCacheDisabled()) {
+                prefetchSegment(keyUrl, headers as HeadersInit);
+              }
             } else {
               newLines.push(line);
             }
@@ -301,13 +317,18 @@ async function proxyM3U8(event: any) {
       if (segmentUrls.length > 0) {
         console.log(`Starting to prefetch ${segmentUrls.length} segments for ${url}`);
         
-        cleanupCache();
-        
-        Promise.all(segmentUrls.map(segmentUrl => 
-          prefetchSegment(segmentUrl, headers as HeadersInit)
-        )).catch(error => {
-          console.error('Error prefetching segments:', error);
-        });
+        // Only perform cache operations if cache is enabled
+        if (!isCacheDisabled()) {
+          cleanupCache();
+          
+          Promise.all(segmentUrls.map(segmentUrl => 
+            prefetchSegment(segmentUrl, headers as HeadersInit)
+          )).catch(error => {
+            console.error('Error prefetching segments:', error);
+          });
+        } else {
+          console.log('Cache disabled - skipping prefetch operations');
+        }
       }
       
       // Set appropriate headers
