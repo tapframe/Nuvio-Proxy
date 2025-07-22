@@ -363,6 +363,13 @@ export function handleCacheStats(event: any) {
 export default defineEventHandler(async (event) => {
   // Handle CORS preflight requests
   if (isPreflightRequest(event)) return handleCors(event, {});
+
+  if (process.env.DISABLE_M3U8 === 'true') {
+    return sendError(event, createError({
+      statusCode: 404,
+      statusMessage: 'M3U8 proxying is disabled'
+    }));
+  }
   
   if (event.path === '/cache-stats') {
     return handleCacheStats(event);
