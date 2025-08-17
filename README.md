@@ -1,23 +1,49 @@
-# simple-proxy
+# SimpleProxy for Nuvio Streams
 
-Simple reverse proxy to bypass CORS, used by [movie-web](https://movie-web.app)/[P-Stream](https://pstream.org).
-Read the docs at https://docs.pstream.org/proxy/introduction
+Reverse proxy for [Nuvio Streams Addon](https://github.com/tapframe/NuvioStreamsAddon) to bypass regional restrictions and access streaming providers.
 
----
+## Deploy
 
-### features:
- - Deployable on many platforms - thanks to nitro
- - header rewrites - read and write protected headers
- - bypass CORS - always allows browser to send requests through it
- - secure it with turnstile - prevent bots from using your proxy
- - parse and bypass m3u8 stream restrictions - make sure the IP is not blocked by the CDN, may need to be on a VPS.
- - Caching of tls segments (disable with DISABLE_CACHE=true in .env)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/tapframe/Nuvio-Proxy)
+
+After deployment:
+1. Copy your deployed URL
+2. Add `?destination=` to the end
+3. Use in your Nuvio Streams `.env` file
+
+## Features
+ - Multi-platform deployment
+ - CORS bypass
+ - Header management
+ - M3U8 stream support
+ - TLS segment caching
 
 > [!WARNING]
-> Turnstile integration only works properly with cloudflare workers as platform
+> Turnstile integration only works with Cloudflare Workers
 
-### supported platforms:
- - cloudflare workers
- - AWS lambda
- - nodejs
- - netlify edge functions
+## Supported Platforms
+- Netlify
+- Cloudflare Workers
+- AWS Lambda
+- Node.js
+
+## Configuration
+
+Add to your Nuvio Streams `.env` file:
+
+```env
+SHOWBOX_PROXY_URL_VALUE=https://your-proxy.netlify.app/?destination=
+VIDSRC_PROXY_URL=https://your-proxy.netlify.app/?destination=
+VIDZEE_PROXY_URL=https://your-proxy.netlify.app/?destination=
+SOAPERTV_PROXY_URL=https://your-proxy.netlify.app/?destination=
+HOLLYMOVIEHD_PROXY_URL=https://your-proxy.netlify.app/?destination=
+XPRIME_PROXY_URL=https://your-proxy.netlify.app/?destination=
+ANIMEPAHE_PROXY_GLOBAL=https://your-proxy.netlify.app/?destination=
+```
+
+## Usage
+
+Direct URL proxying:
+```
+https://your-proxy.netlify.app/?destination=https://example.com/api/data
+```

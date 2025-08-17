@@ -9,6 +9,7 @@ import {
   isAllowedToMakeRequest,
   setTokenHeader,
 } from '@/utils/turnstile';
+import { sessionStore } from '@/utils/session';
 
 export default defineEventHandler(async (event) => {
   // Handle preflight CORS requests
@@ -57,16 +58,55 @@ export default defineEventHandler(async (event) => {
   const body = await getBodyBuffer(event);
   const token = await createTokenIfNeeded(event);
 
+  // Get session cookies and merge with request headers
+  const sessionCookies = sessionStore.getSessionCookies(event.headers);
+  const proxyHeaders = getProxyHeaders(event.headers);
+  
+  // Log incoming cookies from client
+  const incomingCookies = proxyHeaders.get('Cookie');
+  if (incomingCookies) {
+    console.log(`[Proxy] Incoming cookies from client: ${incomingCookies}`);
+  }
+  
+  // Merge session cookies with existing cookies
+  if (sessionCookies) {
+    const existingCookies = proxyHeaders.get('Cookie') || '';
+    const mergedCookies = existingCookies ? `${existingCookies}; ${sessionCookies}` : sessionCookies;
+    proxyHeaders.set('Cookie', mergedCookies);
+    console.log(`[Proxy] Final merged cookies: ${mergedCookies}`);
+  } else if (incomingCookies) {
+    console.log(`[Proxy] Using only incoming cookies: ${incomingCookies}`);
+  }
+
   // Proxy the request
   try {
     await specificProxyRequest(event, destination, {
       blacklistedHeaders: getBlacklistedHeaders(),
       fetchOptions: {
         redirect: 'follow',
-        headers: getProxyHeaders(event.headers),
+        headers: proxyHeaders,
         body,
       },
       onResponse(outputEvent, response) {
+        // Debug: Log all response headers
+        console.log(`[Proxy] Response headers for ${response.url}:`);
+        response.headers.forEach((value, key) => {
+          console.log(`[Proxy] ${key}: ${value}`);
+        });
+        
+        // Extract and store Set-Cookie headers for session management
+        const setCookieHeaders: string[] = [];
+        response.headers.forEach((value, key) => {
+          if (key.toLowerCase() === 'set-cookie') {
+            setCookieHeaders.push(value);
+          }
+        });
+        
+        console.log(`[Proxy] Found ${setCookieHeaders.length} Set-Cookie headers`);
+        if (setCookieHeaders.length > 0) {
+          sessionStore.updateSessionCookies(event.headers, setCookieHeaders);
+        }
+        
         const headers = getAfterResponseHeaders(response.headers, response.url);
         setResponseHeaders(outputEvent, headers);
         if (token) setTokenHeader(event, token);

@@ -21,7 +21,13 @@ const blacklistedHeaders = [
   'forwarded',
   'x-real-ip',
   'content-length',
-  ...Object.keys(headerMap),
+  // Allow standard Cookie headers to pass through
+  // ...Object.keys(headerMap),
+  'X-Cookie', // Only blacklist the X-Cookie variant
+  'X-Referer',
+  'X-Origin', 
+  'X-User-Agent',
+  'X-X-Real-Ip',
 ];
 
 function copyHeader(
@@ -43,8 +49,16 @@ export function getProxyHeaders(headers: Headers): Headers {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:93.0) Gecko/20100101 Firefox/93.0',
   );
 
+  // Handle X-prefixed headers
   Object.entries(headerMap).forEach((entry) => {
     copyHeader(headers, output, entry[0], entry[1]);
+  });
+
+  // Also copy standard headers that aren't blacklisted
+  ['Cookie', 'Referer', 'Origin'].forEach((headerName) => {
+    if (headers.has(headerName)) {
+      output.set(headerName, headers.get(headerName) ?? '');
+    }
   });
 
   return output;
@@ -56,8 +70,19 @@ export function getAfterResponseHeaders(
 ): Record<string, string> {
   const output: Record<string, string> = {};
 
-  if (headers.has('Set-Cookie'))
-    output['X-Set-Cookie'] = headers.get('Set-Cookie') ?? '';
+  // Forward all Set-Cookie headers to maintain session state
+  const setCookieHeaders: string[] = [];
+  headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      setCookieHeaders.push(value);
+    }
+  });
+  
+  if (setCookieHeaders.length > 0) {
+    // Join multiple Set-Cookie headers with newlines for proper forwarding
+    output['Set-Cookie'] = setCookieHeaders.join('\n');
+    output['X-Set-Cookie'] = setCookieHeaders.join('; ');
+  }
 
   return {
     'Access-Control-Allow-Origin': '*',
