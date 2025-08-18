@@ -63,8 +63,18 @@ class SessionStore {
       if (name && value !== undefined) {
         const cookieName = name.trim();
         const cookieValue = value.trim();
+
+        // Skip cookies explicitly cleared by the origin (value set to "deleted")
+        if (cookieValue.toLowerCase() === 'deleted') {
+          if (session.cookies.has(cookieName)) {
+            session.cookies.delete(cookieName);
+            console.log(`[Session] Removed expired cookie: ${cookieName}`);
+          }
+          continue;
+        }
+
         session.cookies.set(cookieName, cookieValue);
-        console.log(`[Session] Stored cookie: ${cookieName}=${cookieValue}`);
+        console.log(`[Session] Stored/updated cookie: ${cookieName}=${cookieValue}`);
       }
     }
     console.log(`[Session] Total cookies in session: ${session.cookies.size}`);
@@ -72,12 +82,21 @@ class SessionStore {
 
   getSessionCookies(headers: Headers): string {
     const session = this.getSession(headers);
+
+    // Build the cookie header while ensuring it doesn't exceed a safe size (~8KB)
     const cookiePairs: string[] = [];
-    
+    let currentSize = 0;
+
     for (const [name, value] of session.cookies.entries()) {
-      cookiePairs.push(`${name}=${value}`);
+      const pair = `${name}=${value}`;
+      currentSize += pair.length + 2; // account for "; "
+      if (currentSize > 7600) {
+        console.warn('[Session] Cookie header exceeds safe limit, truncating further cookies to avoid overflow');
+        break;
+      }
+      cookiePairs.push(pair);
     }
-    
+
     const cookieString = cookiePairs.join('; ');
     console.log(`[Session] Returning cookies: ${cookieString}`);
     return cookieString;
